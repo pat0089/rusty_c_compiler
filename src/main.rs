@@ -1,6 +1,8 @@
 mod lexer;
+mod parser;
 
 use crate::lexer::{Lexer, TokenType};
+use crate::parser::Parser;
 use std::{env, io};
 use std::fs::read_to_string;
 
@@ -19,17 +21,13 @@ fn main() {
 
     let input = read_from_args();
 
-    let lexer = Lexer::new(&input.unwrap_or("int main() { return0; }".to_string()));
-    
-    for token in lexer.buffer() {
-        match token.get_type() {
-            TokenType::Illegal(e) => {
-                eprintln!("{:?}, ({}:{}-{})", e, token.get_line(), token.get_start(), token.get_end());
-            }
-            _ => {
-                println!("{:?}", token)
-            }
+    let lexer = Lexer::new(&input.unwrap_or("int main() { return 0; }".to_string()));
+    let mut parser = Parser::new(lexer);
+    match parser.parse() {
+        Ok(_) => {
+            println!("Parsing successful!");
         }
+        Err(e) => eprintln!("{}", e),
     }
     println!("Hello Rusty C Compiler!");
 }

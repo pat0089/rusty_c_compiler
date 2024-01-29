@@ -9,6 +9,13 @@ pub enum IdentifierType {
 */
 
 #[derive(Debug, Clone)]
+pub enum KeywordType {
+    Int,
+    Return,
+    Illegal,
+}
+
+#[derive(Debug, Clone)]
 pub enum TokenType {
     Illegal(LexerError),
     //EOF,
@@ -21,6 +28,7 @@ pub enum TokenType {
     LBrace,
     RBrace,
     IntLiteral(i32),
+    Keyword(KeywordType),
     /*
     I need to be able to compile this:
 
@@ -40,6 +48,8 @@ impl TokenType {
             ")" => TokenType::RParen,
             "{" => TokenType::LBrace,
             "}" => TokenType::RBrace,
+            "int" => TokenType::Keyword(KeywordType::Int),
+            "return" => TokenType::Keyword(KeywordType::Return),
             _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),
         }
     }
@@ -87,7 +97,7 @@ impl Token {
 
 }
 
-trait TokenStream {
+pub trait TokenStream {
     fn next_token(&mut self) -> Option<Result<Token, LexerError>>;
     fn peek_token(&mut self) -> Option<Result<Token, LexerError>>;
     fn peek_tokens(&mut self, n: usize) -> Vec<Result<Token, LexerError>>;
@@ -123,19 +133,6 @@ pub struct Lexer {
 }
 
 impl Lexer {
-
-    fn validate_identifier(identifier: &str, regex: &Regex) -> TokenType {
-        if regex.is_match(identifier) {
-            TokenType::Identifier(identifier.to_string())
-        } else {
-            TokenType::Illegal(LexerError::new(format!("Invalid identifier: {}", identifier)))
-        }
-    }
-
-    pub fn buffer(&self ) -> &VecDeque<Token> {
-        &self.buffer
-    }
-
     pub fn new(input: &String) -> Lexer {
         let mut l = Lexer {
             buffer: VecDeque::new(),
@@ -156,6 +153,7 @@ impl Lexer {
         let mut current_token = String::new();
         let valid_identifier_regex = Regex::new(r"[_a-zA-Z][_a-zA-Z0-9]{0,30}").unwrap();
         let valid_number_regex = Regex::new(r"^[0-9]+$").unwrap();
+        let keywords = HashSet::from(["int".to_owned(), "return".to_owned()]);
         let symbols = HashSet::from([';', '(', ')', '{', '}']);
         let final_line_num = input.lines().count();
         let mut final_char_num = 0;
@@ -169,7 +167,9 @@ impl Lexer {
                 if c.is_whitespace() || symbols.contains(&c) {
                     if !current_token.is_empty() {
                         let token_type : TokenType;
-                        if valid_identifier_regex.is_match(&current_token) {
+                        if keywords.contains(&current_token) {
+                            token_type = TokenType::from_str(&current_token);
+                        } else if valid_identifier_regex.is_match(&current_token) {
                             token_type = TokenType::Identifier(current_token.clone());
                         } else if valid_number_regex.is_match(&current_token) {
                             token_type = TokenType::IntLiteral(current_token.parse().unwrap());
@@ -221,5 +221,33 @@ impl Lexer {
 
         l.buffer = tokens.into();
         l
+    }
+
+    fn validate_identifier(identifier: &str, regex: &Regex) -> TokenType {
+        if regex.is_match(identifier) {
+            TokenType::Identifier(identifier.to_string())
+        } else {
+            TokenType::Illegal(LexerError::new(format!("Invalid identifier: {}", identifier)))
+        }
+    }
+
+}
+
+impl TokenStream for Lexer {
+    fn next_token(&mut self) -> Option<Result<Token, LexerError>> {
+        if self.buffer.front().is_some() {
+            Some(Ok(self.buffer.pop_front().unwrap()))
+        } else {
+            None
+        }
+    }
+    fn peek_token(&mut self) -> Option<Result<Token, LexerError>> {
+        None
+    }
+    fn peek_tokens(&mut self, n: usize) -> Vec<Result<Token, LexerError>> {
+        Vec::new()
+    }
+    fn putback_token(&mut self, token: Token) -> Result<(), LexerError> {
+        Ok(())
     }
 }
