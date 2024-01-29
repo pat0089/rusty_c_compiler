@@ -8,9 +8,9 @@ pub enum IdentifierType {
 }
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
-    Illegal,
+    Illegal(LexerError),
     //EOF,
     Identifier(String),
     //Type(IdentifierType),
@@ -40,7 +40,7 @@ impl TokenType {
             ")" => TokenType::RParen,
             "{" => TokenType::LBrace,
             "}" => TokenType::RBrace,
-            _ => TokenType::Illegal
+            _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),
         }
     }
 }
@@ -64,6 +64,27 @@ impl Token {
             end,
         }
     }
+
+    pub fn get_type(&self) -> &TokenType {
+        &self.token_type
+    }
+
+    pub fn get_literal(&self) -> &str {
+        &self.literal
+    }
+
+    pub fn get_line(&self) -> i32 {
+        self.line
+    }
+
+    pub fn get_start(&self) -> i32 {
+        self.start
+    }
+
+    pub fn get_end(&self) -> i32 {
+        self.end
+    }
+
 }
 
 trait TokenStream {
@@ -73,7 +94,7 @@ trait TokenStream {
     fn putback_token(&mut self, token: Token) -> Result<(), LexerError>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LexerError {
     message: String,
 }
@@ -107,7 +128,7 @@ impl Lexer {
         if regex.is_match(identifier) {
             TokenType::Identifier(identifier.to_string())
         } else {
-            TokenType::Illegal
+            TokenType::Illegal(LexerError::new(format!("Invalid identifier: {}", identifier)))
         }
     }
 
@@ -153,7 +174,7 @@ impl Lexer {
                         } else if valid_number_regex.is_match(&current_token) {
                             token_type = TokenType::IntLiteral(current_token.parse().unwrap());
                         } else {
-                            token_type = TokenType::Illegal;
+                            token_type = TokenType::Illegal(LexerError::new(format!("Invalid token: {}", current_token)));
                         };
                         tokens.push(
                             Token::new(
