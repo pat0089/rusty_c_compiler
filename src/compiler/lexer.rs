@@ -1,33 +1,36 @@
 use std::{collections::{HashSet, VecDeque}, fmt };
 use regex::Regex;
-/*
-#[derive(Debug)]
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum IdentifierType {
     Int,
     Illegal,
 }
-*/
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum KeywordType {
-    Int,
     Return,
     Illegal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
     Illegal(LexerError),
-    //EOF,
+    EOF,
     Identifier(String),
-    //Type(IdentifierType),
+    IdentifierType(IdentifierType),
     Equals,
     Semicolon,
     LParen,
     RParen,
     LBrace,
     RBrace,
-    IntLiteral(i32),
+    LBracket,
+    RBracket,
+    LChevron,
+    RChevron,
+    IntegerLiteral(i32),
     Keyword(KeywordType),
     /*
     I need to be able to compile this:
@@ -48,7 +51,11 @@ impl TokenType {
             ")" => TokenType::RParen,
             "{" => TokenType::LBrace,
             "}" => TokenType::RBrace,
-            "int" => TokenType::Keyword(KeywordType::Int),
+            "[" => TokenType::LBracket,
+            "]" => TokenType::RBracket,
+            "<" => TokenType::LChevron,
+            ">" => TokenType::RChevron,
+            "int" => TokenType::IdentifierType(IdentifierType::Int),
             "return" => TokenType::Keyword(KeywordType::Return),
             _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),
         }
@@ -75,8 +82,8 @@ impl Token {
         }
     }
 
-    pub fn get_type(&self) -> &TokenType {
-        &self.token_type
+    pub fn get_type(&self) -> TokenType {
+        self.token_type.clone()
     }
 
     pub fn get_literal(&self) -> &str {
@@ -99,12 +106,12 @@ impl Token {
 
 pub trait TokenStream {
     fn next_token(&mut self) -> Option<Result<Token, LexerError>>;
-    fn peek_token(&mut self) -> Option<Result<Token, LexerError>>;
+    fn peek_token(&mut self) -> Option<Result<&Token, LexerError>>;
     fn peek_tokens(&mut self, n: usize) -> Vec<Result<Token, LexerError>>;
     fn putback_token(&mut self, token: Token) -> Result<(), LexerError>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LexerError {
     message: String,
 }
@@ -172,7 +179,7 @@ impl Lexer {
                         } else if valid_identifier_regex.is_match(&current_token) {
                             token_type = TokenType::Identifier(current_token.clone());
                         } else if valid_number_regex.is_match(&current_token) {
-                            token_type = TokenType::IntLiteral(current_token.parse().unwrap());
+                            token_type = TokenType::IntegerLiteral(current_token.parse().unwrap());
                         } else {
                             token_type = TokenType::Illegal(LexerError::new(format!("Invalid token: {}", current_token)));
                         };
@@ -219,6 +226,16 @@ impl Lexer {
             );
         }
 
+        //add the EOF token
+        tokens.push(
+            Token::new(
+                TokenType::EOF, 
+                String::new(), 
+                final_line_num as i32 + 1, 
+                final_char_num as i32, 
+                final_char_num as i32
+            ));
+
         l.buffer = tokens.into();
         l
     }
@@ -241,8 +258,12 @@ impl TokenStream for Lexer {
             None
         }
     }
-    fn peek_token(&mut self) -> Option<Result<Token, LexerError>> {
-        None
+    fn peek_token(&mut self) -> Option<Result<&Token, LexerError>> {
+        if self.buffer.front().is_some() {
+            Some(Ok(self.buffer.front()?))
+        } else {
+            None
+        }
     }
     fn peek_tokens(&mut self, n: usize) -> Vec<Result<Token, LexerError>> {
         Vec::new()

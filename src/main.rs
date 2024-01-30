@@ -1,8 +1,8 @@
-mod lexer;
-mod parser;
+mod compiler;
 
-use crate::lexer::{Lexer, TokenType};
-use crate::parser::Parser;
+use crate::compiler::CompilerError;
+use crate::compiler::lexer::Lexer;
+use crate::compiler::parser::Parser;
 use std::{env, io};
 use std::fs::read_to_string;
 
@@ -17,7 +17,7 @@ fn read_from_args() -> Result<String, io::Error> {
     read_to_string(&args[1])
 }
 
-fn main() {
+fn main() -> Result<(), CompilerError> {
 
     let input = read_from_args();
 
@@ -26,8 +26,12 @@ fn main() {
     match parser.parse() {
         Ok(_) => {
             println!("Parsing successful!");
+            println!("{:#?}", parser.get_ast());
         }
-        Err(e) => eprintln!("{}", e),
+        Err(e) => {
+            return Err(e.into());
+        },
     }
     println!("Hello Rusty C Compiler!");
+    Ok(())
 }
