@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use super::lexer::{TokenStream, Token, LexerError, TokenType, IdentifierType, KeywordType};
 
 #[derive(Debug)]
@@ -82,6 +84,44 @@ impl<T: TokenStream> Parser<T> {
     fn try_parse(&mut self, expected_type: TokenType) -> Result<Token, ParsingError> {
         let token = self.token_stream.next_token()
             .ok_or_else(|| ParsingError::new("Expected token, found EOF".to_string()))??;
+
+            let open_brackets = HashSet::from([
+                TokenType::LParen, 
+                TokenType::LBrace,
+                TokenType::LBracket,
+                TokenType::LChevron,
+            ]);
+
+            let close_brackets = HashSet::from([
+                TokenType::RParen,
+                TokenType::RBrace,
+                TokenType::RBracket,
+                TokenType::RChevron,
+            ]);
+
+            let open_closed_map = HashMap::from([
+                (TokenType::LParen, TokenType::RParen),
+                (TokenType::LBrace, TokenType::RBrace),
+                (TokenType::LBracket, TokenType::RBracket),
+                (TokenType::LChevron, TokenType::RChevron),
+            ]);
+
+            //handle the bracket matching if the token is an open bracket
+            match (close_brackets.contains(&token.get_type()), open_brackets.contains(&token.get_type())) {
+                (true, false) => {
+                    if self.bracket_stack.last().is_none() {
+                        return Err(ParsingError::new(format!("Expected {}, found {} ({}:{}-{})", expected_type, token.get_type(), token.get_line(), token.get_start(), token.get_end())));
+                    } else if let Some(open_bracket) = self.bracket_stack.pop() {
+                        if open_closed_map.get(&open_bracket).unwrap() != &token.get_type() {
+                            return Err(ParsingError::new(format!("Expected {}, found {} ({}:{}-{})", expected_type, token.get_type(), token.get_line(), token.get_start(), token.get_end())));
+                        }
+                    }
+                },
+                (false, true) => {
+                    self.bracket_stack.push(token.get_type());
+                },
+                _ => (),
+            }
 
             match expected_type {
                 //handle all comple enums first

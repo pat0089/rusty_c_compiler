@@ -1,18 +1,18 @@
-use std::{collections::{HashSet, VecDeque}, fmt };
+use std::{collections::{HashSet, VecDeque}, fmt::{self, Display} };
 use regex::Regex;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IdentifierType {
     Int,
 }
 
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KeywordType {
     Return,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TokenType {
     Illegal(LexerError),
     EOF,
@@ -57,6 +57,12 @@ impl TokenType {
             "return" => TokenType::Keyword(KeywordType::Return),
             _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),
         }
+    }
+}
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -109,7 +115,7 @@ pub trait TokenStream {
     fn putback_token(&mut self, token: Token) -> Result<(), LexerError>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LexerError {
     message: String,
 }
