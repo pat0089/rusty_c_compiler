@@ -1,4 +1,4 @@
-use super::lexer::{TokenStream, Token, LexerError, TokenType::{self, *}, IdentifierType::{self, *}, KeywordType::{self, *}};
+use super::lexer::{TokenStream, Token, LexerError, TokenType, IdentifierType, KeywordType};
 
 #[derive(Debug)]
 pub struct ParsingError {

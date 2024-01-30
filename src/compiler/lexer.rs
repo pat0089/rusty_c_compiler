@@ -4,14 +4,12 @@ use regex::Regex;
 #[derive(Debug, Clone, PartialEq)]
 pub enum IdentifierType {
     Int,
-    Illegal,
 }
 
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum KeywordType {
     Return,
-    Illegal,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -107,7 +105,7 @@ impl Token {
 pub trait TokenStream {
     fn next_token(&mut self) -> Option<Result<Token, LexerError>>;
     fn peek_token(&mut self) -> Option<Result<&Token, LexerError>>;
-    fn peek_tokens(&mut self, n: usize) -> Vec<Result<Token, LexerError>>;
+    fn peek_tokens(&mut self, n: usize) -> Vec<Result<&Token, LexerError>>;
     fn putback_token(&mut self, token: Token) -> Result<(), LexerError>;
 }
 
@@ -265,10 +263,23 @@ impl TokenStream for Lexer {
             None
         }
     }
-    fn peek_tokens(&mut self, n: usize) -> Vec<Result<Token, LexerError>> {
-        Vec::new()
+    fn peek_tokens(&mut self, n: usize) -> Vec<Result<&Token, LexerError>> {
+        let mut tokens = Vec::new();
+        for i in 0..n {
+            match self.buffer.get(i) {
+                Some(token) => {
+                    match token.get_type() {
+                        TokenType::Illegal(e) => tokens.push(Err(e)),
+                        _ => tokens.push(Ok(token)),
+                    }
+                },
+                None => break,
+            }
+        }
+        tokens
     }
     fn putback_token(&mut self, token: Token) -> Result<(), LexerError> {
+        self.buffer.push_front(token);
         Ok(())
     }
 }
