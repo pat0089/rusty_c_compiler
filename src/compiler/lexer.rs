@@ -1,4 +1,4 @@
-use std::{collections::{HashSet, VecDeque}, fmt::{self, Display} };
+use std::{collections::{HashMap, HashSet, VecDeque}, fmt::{self, Display} };
 use regex::Regex;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -141,13 +141,44 @@ impl fmt::Display for LexerError {
 #[derive(Debug)]
 pub struct Lexer {
     buffer: VecDeque<Token>,
+    //Map from open bracket to close bracket
+    open_closed_map: HashMap<TokenType, TokenType>,
+    open_brackets: HashSet<TokenType>,
+    close_brackets: HashSet<TokenType>,
+    bracket_stack: Vec<(TokenType, String, i32, i32, i32)>,
 }
 
 impl Lexer {
     pub fn new(input: &String) -> Lexer {
+        let open_brackets = HashSet::from([
+            TokenType::LParen, 
+            TokenType::LBrace,
+            TokenType::LBracket,
+            TokenType::LChevron,
+        ]);
+
+        let close_brackets = HashSet::from([
+            TokenType::RParen,
+            TokenType::RBrace,
+            TokenType::RBracket,
+            TokenType::RChevron,
+        ]);
+
+        let open_closed_map = HashMap::from([
+            (TokenType::RParen, TokenType::LParen),
+            (TokenType::RBrace, TokenType::LBrace),
+            (TokenType::RBracket, TokenType::LBracket),
+            (TokenType::RChevron, TokenType::LChevron),
+        ]);
+
         let mut l = Lexer {
             buffer: VecDeque::new(),
+            open_brackets,
+            close_brackets,
+            open_closed_map,
+            bracket_stack: Vec::new(),
         };
+
         //loop through the input string
         //for each character
         //determine if the character is part of a token or a token itself
@@ -165,7 +196,7 @@ impl Lexer {
         let valid_identifier_regex = Regex::new(r"[_a-zA-Z][_a-zA-Z0-9]{0,30}").unwrap();
         let valid_number_regex = Regex::new(r"^[0-9]+$").unwrap();
         let keywords = HashSet::from(["int".to_owned(), "return".to_owned()]);
-        let symbols = HashSet::from([';', '(', ')', '{', '}']);
+        let symbols = HashSet::from([';', '(', ')', '{', '}', '[', ']', '<', '>', '=', '+', '-', '*', '/']);
         let final_line_num = input.lines().count();
         let mut final_char_num = 0;
         //loop through the input on each line
@@ -239,7 +270,7 @@ impl Lexer {
                 final_char_num as i32, 
                 final_char_num as i32
             ));
-
+        
         l.buffer = tokens.into();
         l
     }
@@ -250,6 +281,44 @@ impl Lexer {
         } else {
             TokenType::Illegal(LexerError::new(format!("Invalid identifier: {}", identifier)))
         }
+    }
+
+    pub fn validate(&mut self) -> Result<(), LexerError> {
+        //check for illegal tokens
+        for token in &self.buffer {
+            if let TokenType::Illegal(e) = token.get_type() {
+                return Err(e);
+            }
+        }
+
+        self.brackets_check()?;
+
+        Ok(())
+    }
+
+    fn brackets_check(&mut self) -> Result<(), LexerError> {
+        for token in &self.buffer {
+            match (self.open_brackets.contains(&token.get_type()), self.close_brackets.contains(&token.get_type())) {
+                (true, false) => {
+                    self.bracket_stack.push((token.get_type(), token.get_literal().to_string(), token.get_line(), token.get_start(), token.get_end()));
+                }
+                (false, true) => {
+                    if self.bracket_stack.is_empty() {
+                        return Err(LexerError::new(format!("Unmatched close bracket: '{}' ({}:{}-{})", token.get_literal(), token.get_line(), token.get_start(), token.get_end())));
+                    }
+                    if self.bracket_stack.last().unwrap().0 != *self.open_closed_map.get(&token.get_type()).unwrap() {
+                        return Err(LexerError::new(format!("Unmatched open bracket: '{}' ({}:{}-{})", token.get_literal(), token.get_line(), token.get_start(), token.get_end())));
+                    }
+                    self.bracket_stack.pop();
+                }
+                _ => {}
+            }
+        }
+        if !self.bracket_stack.is_empty() {
+            let last = self.bracket_stack.last().unwrap();
+            return Err(LexerError::new(format!("Unmatched open bracket: '{}' ({}:{}-{})", last.1, last.2, last.3, last.4)));
+        }
+        Ok(())
     }
 
 }

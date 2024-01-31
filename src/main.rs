@@ -21,7 +21,8 @@ fn main() -> Result<(), CompilerError> {
 
     let input = read_from_args();
 
-    let lexer = Lexer::new(&input.unwrap_or("int main() { return 0; }".to_string()));
+    let mut lexer = Lexer::new(&input.unwrap_or("int main() { return 0; ".to_string()));
+    lexer.validate()?;
     let mut parser = Parser::new(lexer);
     match parser.parse() {
         Ok(_) => {
