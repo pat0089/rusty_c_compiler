@@ -1,5 +1,6 @@
 pub mod lexer;
 pub mod parser;
+pub mod code_generator;
 
 pub use lexer::LexerError;
 pub use parser::ParsingError;
@@ -38,6 +39,14 @@ impl From<LexerError> for CompilerError {
 impl From<ParsingError> for CompilerError {
     fn from(err: ParsingError) -> Self {
         // Convert ParsingError to CompilerError
+        // You might want to include some of the original error's information
+        CompilerError::new(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for CompilerError {
+    fn from(err: std::io::Error) -> Self {
+        // Convert std::io::Error to CompilerError
         // You might want to include some of the original error's information
         CompilerError::new(err.to_string())
     }

@@ -33,13 +33,13 @@ impl From<LexerError> for ParsingError {
 
 #[derive(Debug)]
 pub struct Program {
-    functions: Vec<Function>,
+    pub functions: Vec<Function>,
 }
 
 #[derive(Debug)]
 pub struct Function {
     pub name: String,
-    statements: Vec<Statement>,
+    pub statements: Vec<Statement>,
 }
 
 #[derive(Debug)]
