@@ -201,7 +201,32 @@ impl Lexer {
         let mut final_char_num = 0;
         //loop through the input on each line
         for (line_num, line) in input.lines().enumerate() {
-            //loop through the line by character
+            //if the current string is not empty
+            //add the current string to the buffer
+            //and reset the string for the next token
+            if !current_token.is_empty() {
+                let token_type : TokenType;
+                if keywords.contains(&current_token) {
+                    token_type = TokenType::from_str(&current_token);
+                } else if valid_identifier_regex.is_match(&current_token) {
+                    token_type = TokenType::Identifier(current_token.clone());
+                } else if valid_number_regex.is_match(&current_token) {
+                    token_type = TokenType::IntegerLiteral(current_token.parse().unwrap());
+                } else {
+                    token_type = TokenType::Illegal(LexerError::new(format!("Invalid token: {}", current_token)));
+                };
+                tokens.push(
+                    Token::new(
+                        token_type,
+                        current_token.clone(),
+                        line_num as i32,
+                        (final_char_num + 1 - current_token.len()) as i32, 
+                        final_char_num as i32
+                    ));
+                current_token.clear();
+            }
+
+            //then loop through the line by character
             for (char_num, c) in line.chars().enumerate() {
                 //if the character is whitespace and the current token is not empty, 
                 //add current_token to the buffer
@@ -246,6 +271,7 @@ impl Lexer {
                 }
                 final_char_num = char_num;
             }
+            
         }
 
         //add the last token to the buffer
