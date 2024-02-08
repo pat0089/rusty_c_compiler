@@ -1,4 +1,4 @@
-use super::parser::{Expression, Function, Program, Statement};
+use super::{lexer::TokenType, parser::{Expression, Function, Program, Statement}};
 
 pub struct CodeGenerator {
     code: String,
@@ -24,19 +24,36 @@ impl CodeGenerator {
         for statement in function.statements.iter() {
             match statement {
                 Statement::Return(expression) => {
-                    self.generate_return(expression);
+                    self.generate_expression(expression);
+                    self.code.push_str("\tret\n");
                 }
             }
         }
     }
 
-    fn generate_return(&mut self, expression: &Expression) {
+    fn generate_expression(&mut self, expression: &Expression) {
         match expression {
             Expression::Integer(integer) => {
                 self.code.push_str(format!("\tmovl\t${}, %eax\n", integer).as_str());
             }
+            Expression::UnaryOperator(op, expression) => {
+                self.generate_expression(expression);
+                match op {
+                    TokenType::Negation => {
+                        self.code.push_str("\tneg\t%eax\n");
+                    }
+                    TokenType::BitwiseComplement => {
+                        self.code.push_str("\tnot\t%eax\n");
+                    }
+                    TokenType::LogicalNegation => {
+                        self.code.push_str("\tcmpl\t$0, %eax\n");
+                        self.code.push_str("\tmovl\t$0, %eax\n");
+                        self.code.push_str("\tsete\t%al\n");
+                    }
+                    _ => {}
+                }
+            }
         }
-        self.code.push_str("\tret\n")
     }
 
     pub fn get_code(&self) -> &str {

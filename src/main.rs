@@ -12,7 +12,17 @@ use std::fs::read_to_string;
 fn read_from_args() -> Result<(String, String, String), io::Error> {
     let args: Vec<String> = env::args().collect();
 
+    if args.len() < 2 {
+        println!("Usage: {} <file path>", args[0]);
+        return Err(io::Error::new(io::ErrorKind::Other, "Invalid arguments"));
+    }
+
     let path = Path::new(&args[1]);
+
+    if !path.exists() || !path.is_file() {
+        return Err(io::Error::new(io::ErrorKind::Other, format!("File '{}' does not exist", path.display())));
+    }
+
     let file_name_without_extension = path.file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or_default()
@@ -23,15 +33,6 @@ fn read_from_args() -> Result<(String, String, String), io::Error> {
         .unwrap_or_default();
         
     file_path_string.push('/');
-
-    if args.len() < 2 {
-        println!("Usage: {} <file path>", args[0]);
-        return Err(io::Error::new(io::ErrorKind::Other, "Invalid arguments"));
-    }
-
-    if !path.exists() {
-        return Err(io::Error::new(io::ErrorKind::Other, "File does not exist"));
-    }
 
     let file_contents = read_to_string(&args[1])?;
 

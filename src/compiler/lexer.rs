@@ -10,6 +10,7 @@ pub enum IdentifierType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KeywordType {
     Return,
+    IdentifierType(IdentifierType),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -17,7 +18,6 @@ pub enum TokenType {
     Illegal(LexerError),
     EOF,
     Identifier(String),
-    IdentifierType(IdentifierType),
     Equals,
     Semicolon,
     LParen,
@@ -30,11 +30,26 @@ pub enum TokenType {
     RChevron,
     IntegerLiteral(i32),
     Keyword(KeywordType),
+    Negation,
+    BitwiseComplement,
+    LogicalNegation,
     /*
     I need to be able to compile this:
 
     int main() {
-        return 0;
+        return -1;
+    }
+
+    OR
+
+    int main() {
+        return !1;
+    }
+
+    OR
+
+    int main() {
+        return ~1;
     }
     
     */
@@ -53,7 +68,10 @@ impl TokenType {
             "]" => TokenType::RBracket,
             "<" => TokenType::LChevron,
             ">" => TokenType::RChevron,
-            "int" => TokenType::IdentifierType(IdentifierType::Int),
+            "-" => TokenType::Negation,
+            "~" => TokenType::BitwiseComplement,
+            "!" => TokenType::LogicalNegation,
+            "int" => TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)),
             "return" => TokenType::Keyword(KeywordType::Return),
             _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),
         }
@@ -196,7 +214,7 @@ impl Lexer {
         let valid_identifier_regex = Regex::new(r"[_a-zA-Z][_a-zA-Z0-9]{0,30}").unwrap();
         let valid_number_regex = Regex::new(r"^[0-9]+$").unwrap();
         let keywords = HashSet::from(["int".to_owned(), "return".to_owned()]);
-        let symbols = HashSet::from([';', '(', ')', '{', '}', '[', ']', '<', '>', '=', '+', '-', '*', '/']);
+        let symbols = HashSet::from([';', '(', ')', '{', '}', '[', ']', '<', '>', '=', '+', '-', '*', '/', '~', '!']);
         let final_line_num = input.lines().count();
         let mut final_char_num = 0;
         //loop through the input on each line

@@ -50,6 +50,7 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Integer(i32),
+    UnaryOperator(TokenType, Box<Expression>),
 }
 
 #[derive(Debug)]
@@ -108,7 +109,7 @@ impl<T: TokenStream> Parser<T> {
     }
 
     fn parse_function(&mut self) -> Result<Function, ParsingError> {
-        self.try_parse(TokenType::IdentifierType(IdentifierType::Int))?;
+        self.try_parse(TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)))?;
         let name = self.try_parse(TokenType::Identifier("".to_string()))?;
         self.try_parse(TokenType::LParen)?;
         self.try_parse(TokenType::RParen)?;
@@ -150,14 +151,24 @@ impl<T: TokenStream> Parser<T> {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParsingError> {
-        let integer = self.try_parse(TokenType::IntegerLiteral(0))?;
-        match integer.get_type() {
-            TokenType::IntegerLiteral(integer) => {
-                Ok(Expression::Integer(integer))
+        let next_token = self.token_stream.next_token();
+        match next_token {
+            Some(Ok(token)) => {
+                match token.get_type() {
+                    TokenType::IntegerLiteral(integer) => {
+                        Ok(Expression::Integer(integer))
+                    }
+                    TokenType::BitwiseComplement | TokenType::Negation | TokenType::LogicalNegation => {
+                        let operator = token.get_type();
+                        let expression = self.parse_expression()?;
+                        Ok(Expression::UnaryOperator(operator, Box::new(expression)))
+                    }
+                    _ => {
+                        Err(ParsingError::new(format!("Expected expression ({}:{}-{})", token.get_line(), token.get_start(), token.get_end())))
+                    }
+                }
             }
-            _ => {
-                Err(ParsingError::new(format!("Expected integer ({}:{}-{})", integer.get_line(), integer.get_start(), integer.get_end())))
-            }
+            _ => Err(ParsingError::new("Expected Token, found EOF".to_string())),
         }
     }
 
