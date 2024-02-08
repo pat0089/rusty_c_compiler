@@ -33,26 +33,9 @@ pub enum TokenType {
     Negation,
     BitwiseComplement,
     LogicalNegation,
-    /*
-    I need to be able to compile this:
-
-    int main() {
-        return -1;
-    }
-
-    OR
-
-    int main() {
-        return !1;
-    }
-
-    OR
-
-    int main() {
-        return ~1;
-    }
-    
-    */
+    Addition,
+    Multiplication,
+    Division,
 }
 
 impl TokenType {
@@ -71,6 +54,9 @@ impl TokenType {
             "-" => TokenType::Negation,
             "~" => TokenType::BitwiseComplement,
             "!" => TokenType::LogicalNegation,
+            "+" => TokenType::Addition,
+            "*" => TokenType::Multiplication,
+            "/" => TokenType::Division,
             "int" => TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)),
             "return" => TokenType::Keyword(KeywordType::Return),
             _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),
@@ -128,8 +114,8 @@ impl Token {
 
 pub trait TokenStream {
     fn next_token(&mut self) -> Option<Result<Token, LexerError>>;
-    fn peek_token(&mut self) -> Option<Result<&Token, LexerError>>;
-    fn peek_tokens(&mut self, n: usize) -> Vec<Result<&Token, LexerError>>;
+    fn peek_token(&self) -> Option<Result<&Token, LexerError>>;
+    fn peek_tokens(&self, n: usize) -> Vec<Result<&Token, LexerError>>;
     fn putback_token(&mut self, token: Token) -> Result<(), LexerError>;
 }
 
@@ -214,7 +200,7 @@ impl Lexer {
         let valid_identifier_regex = Regex::new(r"[_a-zA-Z][_a-zA-Z0-9]{0,30}").unwrap();
         let valid_number_regex = Regex::new(r"^[0-9]+$").unwrap();
         let keywords = HashSet::from(["int".to_owned(), "return".to_owned()]);
-        let symbols = HashSet::from([';', '(', ')', '{', '}', '[', ']', '<', '>', '=', '+', '-', '*', '/', '~', '!']);
+        let symbols = HashSet::from([';', '(', ')', '{', '}', '[', ']', '<', '>', '=', '+', '-', '*', '/', '~', '!', ',', '.', ':', '%', '&', '|', '^', '?', '$', '@', '#', '!', '`', '~']);
         let final_line_num = input.lines().count();
         let mut final_char_num = 0;
         //loop through the input on each line
@@ -375,14 +361,14 @@ impl TokenStream for Lexer {
             None
         }
     }
-    fn peek_token(&mut self) -> Option<Result<&Token, LexerError>> {
+    fn peek_token(&self) -> Option<Result<&Token, LexerError>> {
         if self.buffer.front().is_some() {
             Some(Ok(self.buffer.front()?))
         } else {
             None
         }
     }
-    fn peek_tokens(&mut self, n: usize) -> Vec<Result<&Token, LexerError>> {
+    fn peek_tokens(&self, n: usize) -> Vec<Result<&Token, LexerError>> {
         let mut tokens = Vec::new();
         for i in 0..n {
             match self.buffer.get(i) {
