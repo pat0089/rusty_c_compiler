@@ -18,7 +18,7 @@ pub enum TokenType {
     Illegal(LexerError),
     EOF,
     Identifier(String),
-    Equals,
+    Equality,
     Semicolon,
     LParen,
     RParen,
@@ -41,7 +41,7 @@ pub enum TokenType {
 impl TokenType {
     fn from_str(to_string: &str) -> TokenType {
         match to_string {
-            "=" => TokenType::Equals,
+            "==" => TokenType::Equality,
             ";" => TokenType::Semicolon,
             "(" => TokenType::LParen,
             ")" => TokenType::RParen,
@@ -153,6 +153,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
+
     pub fn new(input: &String) -> Lexer {
         let open_brackets = HashSet::from([
             TokenType::LParen, 
@@ -183,6 +184,8 @@ impl Lexer {
             bracket_stack: Vec::new(),
         };
 
+        
+
         //loop through the input string
         //for each character
         //determine if the character is part of a token or a token itself
@@ -199,81 +202,178 @@ impl Lexer {
         let mut current_token = String::new();
         let valid_identifier_regex = Regex::new(r"[_a-zA-Z][_a-zA-Z0-9]{0,30}").unwrap();
         let valid_number_regex = Regex::new(r"^[0-9]+$").unwrap();
-        let keywords = HashSet::from(["int".to_owned(), "return".to_owned()]);
-        let symbols = HashSet::from([';', '(', ')', '{', '}', '[', ']', '<', '>', '=', '+', '-', '*', '/', '~', '!', ',', '.', ':', '%', '&', '|', '^', '?', '$', '@', '#', '!', '`', '~']);
+        let keywords = HashSet::from(["int", "return"]);
+        let symbols = HashSet::from([";", "(", ")", "{", "}", "[", "]", "<", ">", "=", "+", "-", "*", "/", "%", "!", "~", "&", "|"]);
+        let potential_double_symbol_chars = HashSet::from(["=", "<", ">", "!", "&", "|"]);
         let final_line_num = input.lines().count();
-        let mut final_char_num = 0;
+        let mut last_char_num = 0;
+
+        let get_keyword_type = |keyword: &String| -> TokenType {
+            match keyword.as_str() {
+                "int" => TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)),
+                "return" => TokenType::Keyword(KeywordType::Return),
+                _ => TokenType::Illegal(LexerError::new(format!("Invalid keyword: {}", keyword))),
+            }
+        };
+
+        let token_type_from_current = |current_token: String | -> TokenType {
+            let token_type : TokenType;
+            if keywords.contains(&current_token.as_str()) {
+                token_type = get_keyword_type(&current_token);
+            } else if valid_identifier_regex.is_match(&current_token) {
+                token_type = TokenType::Identifier(current_token.clone());
+            } else if valid_number_regex.is_match(&current_token) {
+                token_type = match current_token.parse::<i32>() {
+                    Ok(i) => TokenType::IntegerLiteral(i),
+                    Err(_) => TokenType::Illegal(LexerError::new(format!("Invalid number: {}", current_token))),
+                };
+            } else {
+                token_type = TokenType::from_str(&current_token);
+            }
+            token_type
+        };
+
+        let is_valid_double_symbol = |a: &String, b : &char| -> bool {
+            match (a.as_str(), b) {
+                (">", '=') | ("<", '=') | ("!", '=') | ("=", '=') | ("&", '&') | ("|", '|') => true,
+                _ => false
+            }
+        };
+
         //loop through the input on each line
         for (line_num, line) in input.lines().enumerate() {
-            //if the current string is not empty
-            //add the current string to the buffer
-            //and reset the string for the next token
+
+            //make sure to reset the current_token and push it to the buffer if it is not empty at each new line
             if !current_token.is_empty() {
-                let token_type : TokenType;
-                if keywords.contains(&current_token) {
-                    token_type = TokenType::from_str(&current_token);
-                } else if valid_identifier_regex.is_match(&current_token) {
-                    token_type = TokenType::Identifier(current_token.clone());
-                } else if valid_number_regex.is_match(&current_token) {
-                    token_type = TokenType::IntegerLiteral(current_token.parse().unwrap());
-                } else {
-                    token_type = TokenType::Illegal(LexerError::new(format!("Invalid token: {}", current_token)));
-                };
+                let token_type = token_type_from_current(current_token.clone());
                 tokens.push(
                     Token::new(
                         token_type,
                         current_token.clone(),
                         line_num as i32,
-                        (final_char_num + 1 - current_token.len()) as i32, 
-                        final_char_num as i32
-                    ));
+                        (last_char_num + 1 - current_token.len()) as i32,
+                        last_char_num as i32
+                    )
+                );
                 current_token.clear();
             }
-
+            
             //then loop through the line by character
             for (char_num, c) in line.chars().enumerate() {
-                //if the character is whitespace and the current token is not empty, 
-                //add current_token to the buffer
-                //then reset the string for the next token
-                if c.is_whitespace() || symbols.contains(&c) {
-                    if !current_token.is_empty() {
-                        let token_type : TokenType;
-                        if keywords.contains(&current_token) {
-                            token_type = TokenType::from_str(&current_token);
-                        } else if valid_identifier_regex.is_match(&current_token) {
-                            token_type = TokenType::Identifier(current_token.clone());
-                        } else if valid_number_regex.is_match(&current_token) {
-                            token_type = TokenType::IntegerLiteral(current_token.parse().unwrap());
+                
+                //if the character is whitespace, i.e. a space (because that is the only whitespace character we can encounter)
+                //and if the current token is not empty,
+                //attempt to add the token to the buffer
+                //check through all the valid posibilities before adding the an illegal token to the buffer
+                //reset the string for the next token, update the last character number, then continue to the next character
+                if c.is_whitespace() && !current_token.is_empty() {
+                    let token_type = token_type_from_current(current_token.clone());
+                    tokens.push(
+                        Token::new(
+                            token_type,
+                            current_token.clone(),
+                            (line_num + 1) as i32,
+                            (last_char_num + 1 - current_token.len()) as i32,
+                            last_char_num as i32
+                        )
+                    );
+                    current_token.clear();
+                    last_char_num = char_num;
+                    continue;
+                }
+
+                //if the character is not whitespace
+                //and if the current token is empty
+                //add it to the current token otherwise continue to the the next character
+                if current_token.is_empty() {
+                    if !c.is_whitespace() {
+                        current_token.push(c);
+                        last_char_num = char_num;
+                    }
+                    continue;
+                }
+
+                //by now we have handled all the whitespace cases
+                //now we need to handle the rest of the characters, that is symbols and keywords/integer literals/identifiers
+                //there are now 5 possible states to be in
+                // 1. current_token contains a symbol and the current character is a symbol and the symbol is a double symbol
+                // 2. current_token contains a symbol and the current character is a symbol but the symbol is not a double symbol
+                // 3. current_token contains a symbol and the current character is not a symbol
+                // 4. current_token contains anything other than a symbol and the current character is a symbol
+                // 5. current_token contains anything other than a symbol and the current character is not a symbol
+
+                //if the current_token is a symbol
+                if symbols.contains(&current_token.as_str()) {
+                    //if the current character is a symbol
+                    if symbols.contains(&c.to_string().as_str()) {
+                        //if the symbol is a double symbol
+                        if potential_double_symbol_chars.contains(&current_token.as_str()) && is_valid_double_symbol(&current_token, &c) {
+                            current_token.push(c);
+                            let token_type = token_type_from_current(current_token.clone());
+                            tokens.push(
+                                Token::new(
+                                    token_type,
+                                    current_token.clone(),
+                                    (line_num + 1) as i32,
+                                    (char_num - current_token.len() + 1) as i32,
+                                    char_num as i32
+                                )
+                            );
+                            current_token.clear();
+                        //if the symbol is not a double symbol
                         } else {
-                            token_type = TokenType::Illegal(LexerError::new(format!("Invalid token: {}", current_token)));
-                        };
+                            let token_type = token_type_from_current(current_token.clone());
+                            tokens.push(
+                                Token::new(
+                                    token_type,
+                                    current_token.clone(),
+                                    (line_num + 1) as i32,
+                                    (char_num - current_token.len()) as i32,
+                                    last_char_num as i32
+                                )
+                            );
+                            current_token.clear();
+                            current_token.push(c);
+                        }
+                    //if the current character is not a symbol
+                    } else {
+                        let token_type = token_type_from_current(current_token.clone());
                         tokens.push(
                             Token::new(
                                 token_type,
                                 current_token.clone(),
-                                line_num as i32 + 1, 
-                                (char_num - current_token.len()) as i32, 
-                                char_num as i32
-                            ));
+                                (line_num + 1) as i32,
+                                (char_num - current_token.len()) as i32,
+                                last_char_num as i32
+                            )
+                        );
                         current_token.clear();
+                        current_token.push(c);
                     }
-                    if symbols.contains(&c) {
-                        let symbol_token_type = TokenType::from_str(&c.to_string());
+                //if the current_token is not a symbol
+                } else {
+                    //if the current character is not a symbol
+                    if !symbols.contains(&c.to_string().as_str()) {
+                        current_token.push(c);
+                    //if the current character is a symbol
+                    } else {
+                        let token_type = token_type_from_current(current_token.clone());
                         tokens.push(
                             Token::new(
-                                symbol_token_type,
-                                c.to_string(),
-                                line_num as i32 + 1,
-                                char_num as i32,
-                                char_num as i32 + 1,
-                            ),
+                                token_type,
+                                current_token.clone(),
+                                (line_num + 1) as i32,
+                                (char_num - current_token.len()) as i32,
+                                last_char_num as i32
+                            )
                         );
+                        current_token.clear();
+                        current_token.push(c);
                     }
-                } else {
-                    //handle other cases here
-                    current_token.push(c);
                 }
-                final_char_num = char_num;
+
+                //update the last character number
+                last_char_num = char_num;
             }
             
         }
@@ -282,11 +382,11 @@ impl Lexer {
         if !current_token.is_empty() {
             tokens.push(
                 Token::new(
-                    Lexer::validate_identifier(&current_token, &valid_identifier_regex),
+                    token_type_from_current(current_token.clone()),
                     current_token.clone(),
                     final_line_num as i32 + 1,
-                    (final_char_num - current_token.len()) as i32,
-                    final_char_num as i32
+                    (last_char_num + 1 - current_token.len()) as i32,
+                    last_char_num as i32
                 )
             );
         }
@@ -297,20 +397,12 @@ impl Lexer {
                 TokenType::EOF, 
                 String::new(), 
                 final_line_num as i32 + 1, 
-                final_char_num as i32, 
-                final_char_num as i32
+                last_char_num as i32, 
+                last_char_num as i32
             ));
         
         l.buffer = tokens.into();
         l
-    }
-
-    fn validate_identifier(identifier: &str, regex: &Regex) -> TokenType {
-        if regex.is_match(identifier) {
-            TokenType::Identifier(identifier.to_string())
-        } else {
-            TokenType::Illegal(LexerError::new(format!("Invalid identifier: {}", identifier)))
-        }
     }
 
     pub fn validate(&mut self) -> Result<(), LexerError> {
