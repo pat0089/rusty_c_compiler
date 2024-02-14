@@ -2,6 +2,7 @@ use super::{lexer::TokenType, parser::{Expression, Function, Program, Statement}
 
 pub struct CodeGenerator {
     code: String,
+    label_num: i32,
 }
 
 #[derive(Debug)]
@@ -27,6 +28,7 @@ impl CodeGenerator {
     pub fn new() -> CodeGenerator {
         CodeGenerator {
             code: String::new(),
+            label_num: 0,
         }
     }
 
@@ -80,6 +82,32 @@ impl CodeGenerator {
                         self.generate_expression(left);
                         self.pop_register(Register::ECX);
                     }
+                    TokenType::LogicalOr | TokenType::LogicalAnd => {
+                        let jump = self.generate_label();
+                        let end = self.generate_label();
+                        self.generate_expression(left);
+                        self.code.push_str("\tcmpl\t$0, %eax\n");
+                        match op {
+                            TokenType::LogicalAnd => {
+                                self.code.push_str(format!("\tjne\t{}\n", jump).as_str());
+                                self.code.push_str(format!("\tjmp\t{}\n", end).as_str());
+                            }
+                            TokenType::LogicalOr => {
+                                self.code.push_str(format!("\tje\t{}\n", jump).as_str());
+                                self.code.push_str("\tmovl\t$1, %eax\n");
+                                self.code.push_str(format!("\tjmp\t{}\n", end).as_str());
+                            }
+                            _ => {}
+                        }
+                        self.code.push_str(format!("{}:\n", jump).as_str());
+                        self.generate_expression(right);
+
+                        self.code.push_str("\tcmpl\t$0, %eax\n");
+                        self.code.push_str("\tmovl\t$0, %eax\n");
+                        self.code.push_str("\tsetne\t%al\n");
+
+                        self.code.push_str(format!("{}:\n", end).as_str());
+                    }
                     _ => {
                         self.generate_expression(left);
                         self.push_register(Register::EAX);
@@ -101,6 +129,20 @@ impl CodeGenerator {
                         self.code.push_str("\tcdq\n");
                         self.code.push_str("\tidivl\t%ecx\n");
                     },
+                    TokenType::Equals | TokenType::NotEquals | TokenType::GreaterThan | TokenType::LessThan
+                    | TokenType::GreaterThanOrEquals | TokenType::LessThanOrEquals => {
+                        self.code.push_str("\tcmpl\t%eax, %ecx\n");
+                        self.code.push_str("\tmovl\t$0, %eax\n");
+                        match op {
+                            TokenType::Equals => self.code.push_str("\tsete\t%al\n"),
+                            TokenType::NotEquals => self.code.push_str("\tsetne\t%al\n"),
+                            TokenType::GreaterThan => self.code.push_str("\tsetg\t%al\n"),
+                            TokenType::LessThan => self.code.push_str("\tsetl\t%al\n"),
+                            TokenType::GreaterThanOrEquals => self.code.push_str("\tsetge\t%al\n"),
+                            TokenType::LessThanOrEquals => self.code.push_str("\tsetle\t%al\n"),
+                            _ => {}
+                        }
+                    }
                     _ => {}
                 }
 
@@ -122,6 +164,12 @@ impl CodeGenerator {
 
     fn pop_register(&mut self, register: Register) {
         self.code.push_str(format!("\tpop\t{}\n", register).as_str());
+    }
+
+    fn generate_label(&mut self) -> String {
+        let label = format!("_lab{}", self.label_num);
+        self.label_num += 1;
+        label
     }
     
 }

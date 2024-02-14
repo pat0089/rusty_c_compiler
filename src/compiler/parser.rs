@@ -152,6 +152,53 @@ impl<T: TokenStream> Parser<T> {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParsingError> {
+        let parser_function = |parser: &mut Self| parser.parse_logical_and();
+        let separator_func = |token_type: TokenType| -> bool {
+            match token_type {
+                TokenType::LogicalOr => true,
+                _ => false,
+            }
+        };
+
+        self.parse_none_or_more(parser_function, separator_func)
+    }
+
+    fn parse_logical_and(&mut self) -> Result<Expression, ParsingError> {
+        let parser_func = |parser: &mut Self| parser.parse_equality();
+        let separator_func = |token_type: TokenType| -> bool {
+            match token_type {
+                TokenType::LogicalAnd => true,
+                _ => false,
+            }
+        };
+        self.parse_none_or_more(parser_func, separator_func)
+    }
+
+    fn parse_equality(&mut self) -> Result<Expression, ParsingError> {
+        let parser_func = |parser: &mut Self| parser.parse_relational();
+        let separator_func = |token_type: TokenType| -> bool {
+            match token_type {
+                TokenType::Equals | TokenType::NotEquals => true,
+                _ => false,
+            }
+        };
+        self.parse_none_or_more(parser_func, separator_func)
+    }
+
+    fn parse_relational(&mut self) -> Result<Expression, ParsingError> {
+        let parser_func = |parser: &mut Self| parser.parse_additive();
+        let separator_func = |token_type: TokenType| -> bool {
+            match token_type {
+                TokenType::LessThan | TokenType::GreaterThan |
+                TokenType::LessThanOrEquals | TokenType::GreaterThanOrEquals =>
+                true,
+                _ => false,
+            }
+        };
+        self.parse_none_or_more(parser_func, separator_func)
+    }
+
+    fn parse_additive(&mut self) -> Result<Expression, ParsingError> {
         let parser_func = |parser: &mut Self| parser.parse_term();
         let separator_func = |token_type: TokenType| -> bool {
             match token_type {

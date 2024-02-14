@@ -18,10 +18,14 @@ pub enum TokenType {
     Illegal(LexerError),
     EOF,
     Identifier(String),
-    Equality,
-    Inequality,
-    LessThanOrEqual,
-    GreaterThanOrEqual,
+    
+    Equals,
+    NotEquals,
+    LessThanOrEquals,
+    GreaterThanOrEquals,
+    LessThan,
+    GreaterThan,
+
     Semicolon,
     LParen,
     RParen,
@@ -29,25 +33,31 @@ pub enum TokenType {
     RBrace,
     LBracket,
     RBracket,
-    LChevron,
-    RChevron,
+
     IntegerLiteral(i32),
     Keyword(KeywordType),
+
     Negation,
     BitwiseComplement,
     LogicalNegation,
+
     Addition,
     Multiplication,
     Division,
+
+    LogicalAnd,
+    LogicalOr
 }
 
 impl TokenType {
     fn from_str(to_string: &str) -> TokenType {
         match to_string {
-            "==" => TokenType::Equality,
-            "!=" => TokenType::Inequality,
-            "<=" => TokenType::LessThanOrEqual,
-            ">=" => TokenType::GreaterThanOrEqual,
+            "==" => TokenType::Equals,
+            "!=" => TokenType::NotEquals,
+            "<=" => TokenType::LessThanOrEquals,
+            ">=" => TokenType::GreaterThanOrEquals,
+            "&&" => TokenType::LogicalAnd,
+            "||" => TokenType::LogicalOr,
             ";" => TokenType::Semicolon,
             "(" => TokenType::LParen,
             ")" => TokenType::RParen,
@@ -55,8 +65,8 @@ impl TokenType {
             "}" => TokenType::RBrace,
             "[" => TokenType::LBracket,
             "]" => TokenType::RBracket,
-            "<" => TokenType::LChevron,
-            ">" => TokenType::RChevron,
+            "<" => TokenType::LessThan,
+            ">" => TokenType::GreaterThan,
             "-" => TokenType::Negation,
             "~" => TokenType::BitwiseComplement,
             "!" => TokenType::LogicalNegation,
@@ -165,21 +175,18 @@ impl Lexer {
             TokenType::LParen, 
             TokenType::LBrace,
             TokenType::LBracket,
-            TokenType::LChevron,
         ]);
 
         let close_brackets = HashSet::from([
             TokenType::RParen,
             TokenType::RBrace,
             TokenType::RBracket,
-            TokenType::RChevron,
         ]);
 
         let open_closed_map = HashMap::from([
             (TokenType::RParen, TokenType::LParen),
             (TokenType::RBrace, TokenType::LBrace),
             (TokenType::RBracket, TokenType::LBracket),
-            (TokenType::RChevron, TokenType::LChevron),
         ]);
 
         let mut l = Lexer {
