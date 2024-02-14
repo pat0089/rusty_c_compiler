@@ -152,58 +152,26 @@ impl<T: TokenStream> Parser<T> {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParsingError> {
-        let mut term = self.parse_term()?;
-        loop {
-            let token_type = match self.token_stream.peek_token() {
-                Some(Ok(token)) => token.get_type(),
-                _ => break, // If there's no token, or an error, we exit the loop
-            };
-    
+        let parser_func = |parser: &mut Self| parser.parse_term();
+        let separator_func = |token_type: TokenType| -> bool {
             match token_type {
-                TokenType::Addition | TokenType::Negation => {
-                    // We consume the token only after deciding we can proceed
-                    let operator = match self.token_stream.next_token() {
-                        Some(Ok(op)) => op,
-                        _ => return Err(ParsingError::new(format!("Expected operator but found none."))),
-                    };
-    
-                    let next_term = self.parse_term()?;
-                    // Assuming you have a constructor or similar for your expressions
-                    term = Expression::BinaryOperator(operator.get_type(), Box::new(term), Box::new(next_term));
-                }
-                _ => break, // If the token is not an operator we are looking for, exit loop
+                TokenType::Addition | TokenType::Negation => true,
+                _ => false,
             }
-        }
-        Ok(term)
+        };
+        self.parse_none_or_more(parser_func, separator_func)
     }
-    
 
     fn parse_term(&mut self) -> Result<Expression, ParsingError> {
-        let mut factor = self.parse_factor()?;
-        loop {
-            let token_type = match self.token_stream.peek_token() {
-                Some(Ok(token)) => token.get_type(),
-                _ => break, // If there's no token, or an error, we exit the loop
-            };
-    
+        let parser_func = |parser: &mut Self| parser.parse_factor();
+        let separator_func = |token_type: TokenType| -> bool {
             match token_type {
-                TokenType::Multiplication | TokenType::Division => {
-                    // We consume the token only after deciding we can proceed
-                    let operator = match self.token_stream.next_token() {
-                        Some(Ok(op)) => op,
-                        _ => return Err(ParsingError::new(format!("Expected operator but found none."))),
-                    };
-    
-                    let next_factor = self.parse_factor()?;
-                    // Assuming you have a constructor or similar for your expressions
-                    factor = Expression::BinaryOperator(operator.get_type(), Box::new(factor), Box::new(next_factor));
-                }
-                _ => break, // If the token is not an operator we are looking for, exit loop
+                TokenType::Multiplication | TokenType::Division => true,
+                _ => false,
             }
-        }
-        Ok(factor)
+        };
+        self.parse_none_or_more(parser_func, separator_func)
     }
-    
 
     fn parse_factor(&mut self) -> Result<Expression, ParsingError> {
         let next_token = self.token_stream.next_token();
@@ -251,5 +219,34 @@ impl<T: TokenStream> Parser<T> {
         }
 
         Ok(Program { functions })
+    }
+
+    fn parse_none_or_more<F, G>(&mut self, parser_func : F, separator_func : G) -> Result<Expression, ParsingError> 
+    where
+        F: Fn(&mut Self) -> Result<Expression, ParsingError>,
+        G: Fn(TokenType) -> bool
+    {
+        let mut result = parser_func(self)?;
+        loop {
+            let token_type = match self.token_stream.peek_token() {
+                Some(Ok(token)) => token.get_type(),
+                _ => break, // If there's no token, or an error, we exit the loop
+            };
+
+            match separator_func(token_type) {
+                true => {
+                    let operator = match self.token_stream.next_token() {
+                        Some(Ok(op)) => op.get_type(),
+                        _ => return Err(ParsingError::new(format!("Expected operator but found none."))),
+                    };
+
+                    let next_result = parser_func(self)?;
+
+                    result = Expression::BinaryOperator(operator, Box::new(result), Box::new(next_result));
+                }
+                false => break,
+            }
+        }
+        Ok(result)
     }
 }

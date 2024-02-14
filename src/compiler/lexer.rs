@@ -19,6 +19,9 @@ pub enum TokenType {
     EOF,
     Identifier(String),
     Equality,
+    Inequality,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
     Semicolon,
     LParen,
     RParen,
@@ -42,6 +45,9 @@ impl TokenType {
     fn from_str(to_string: &str) -> TokenType {
         match to_string {
             "==" => TokenType::Equality,
+            "!=" => TokenType::Inequality,
+            "<=" => TokenType::LessThanOrEqual,
+            ">=" => TokenType::GreaterThanOrEqual,
             ";" => TokenType::Semicolon,
             "(" => TokenType::LParen,
             ")" => TokenType::RParen,
@@ -235,7 +241,8 @@ impl Lexer {
 
         let is_valid_double_symbol = |a: &String, b : &char| -> bool {
             match (a.as_str(), b) {
-                (">", '=') | ("<", '=') | ("!", '=') | ("=", '=') | ("&", '&') | ("|", '|') => true,
+                (">", '=') | ("<", '=') | ("!", '=') | ("=", '=') | 
+                ("&", '&') | ("|", '|') => true,
                 _ => false
             }
         };

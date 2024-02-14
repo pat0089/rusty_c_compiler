@@ -1,6 +1,7 @@
 pub mod lexer;
 pub mod parser;
 pub mod code_generator;
+pub mod util;
 
 pub use lexer::LexerError;
 pub use parser::ParsingError;
