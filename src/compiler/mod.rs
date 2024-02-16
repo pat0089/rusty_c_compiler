@@ -5,6 +5,7 @@ pub mod util;
 
 pub use lexer::LexerError;
 pub use parser::ParsingError;
+pub use code_generator::CodeGeneratorError;
 
 #[derive(Debug)]
 pub struct CompilerError {
@@ -40,6 +41,14 @@ impl From<LexerError> for CompilerError {
 impl From<ParsingError> for CompilerError {
     fn from(err: ParsingError) -> Self {
         // Convert ParsingError to CompilerError
+        // You might want to include some of the original error's information
+        CompilerError::new(err.to_string())
+    }
+}
+
+impl From<CodeGeneratorError> for CompilerError {
+    fn from(err: CodeGeneratorError) -> Self {
+        // Convert CodeGeneratorError to CompilerError
         // You might want to include some of the original error's information
         CompilerError::new(err.to_string())
     }

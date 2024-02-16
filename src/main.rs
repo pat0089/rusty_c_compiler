@@ -27,7 +27,7 @@ fn main() -> Result<(), CompilerError> {
         _ => {}
     }
     let mut code_generator = CodeGenerator::new();
-    code_generator.generate(parser.get_ast());
+    code_generator.generate(parser.get_ast())?;
     let assembly_file = format!("{}{}.s", file_path, file_name);
     let output_file = format!("{}{}", file_path, file_name);
     code_generator.write_to_file(assembly_file.as_str())?;

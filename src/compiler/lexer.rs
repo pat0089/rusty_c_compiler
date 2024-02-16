@@ -46,7 +46,9 @@ pub enum TokenType {
     Division,
 
     LogicalAnd,
-    LogicalOr
+    LogicalOr,
+
+    Assignment,
 }
 
 impl TokenType {
@@ -73,6 +75,7 @@ impl TokenType {
             "+" => TokenType::Addition,
             "*" => TokenType::Multiplication,
             "/" => TokenType::Division,
+            "=" => TokenType::Assignment,
             "int" => TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)),
             "return" => TokenType::Keyword(KeywordType::Return),
             _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),

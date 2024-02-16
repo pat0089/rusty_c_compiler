@@ -1,8 +1,37 @@
+use std::collections::HashMap;
+
 use super::{lexer::TokenType, parser::{Expression, Function, Program, Statement}};
 
+#[derive(Debug)]
+pub struct CodeGeneratorError {
+    message: String,
+}
+
+impl CodeGeneratorError {
+    pub fn new(message: String) -> CodeGeneratorError {
+        CodeGeneratorError { message }
+    }
+}
+
+impl std::error::Error for CodeGeneratorError {
+    fn description(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for CodeGeneratorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "CodeGenerator error: {}", self.message)
+    }
+}
+
+#[derive(Debug)]
 pub struct CodeGenerator {
     code: String,
     label_num: i32,
+    variables: HashMap<String, i32>,
+    function_contains_return: HashMap<String, bool>,
+    stack_offset: i32,
 }
 
 #[derive(Debug)]
@@ -29,36 +58,65 @@ impl CodeGenerator {
         CodeGenerator {
             code: String::new(),
             label_num: 0,
+            variables: HashMap::new(),
+            function_contains_return: HashMap::new(),
+            stack_offset: 0,
         }
     }
 
-    pub fn generate(&mut self, program: &Program) {
+    pub fn generate(&mut self, program: &Program) -> Result<(), CodeGeneratorError> {
         self.code.push_str("\t.text\n");
         for function in program.functions.iter() {
-            self.generate_function(function);
+            self.generate_function(function)?;
         }
+        Ok(())
     }
 
-    fn generate_function(&mut self, function: &Function) {
+    fn generate_function(&mut self, function: &Function) -> Result<(), CodeGeneratorError> {
         self.code.push_str(format!("\t.globl\t{}\n", function.name).as_str());
         self.code.push_str(format!("{}:\n", function.name).as_str());
+        self.function_contains_return
+            .insert(function.name.to_string(), false);
+
+        self.generate_fn_prologue();
         for statement in function.statements.iter() {
             match statement {
                 Statement::Return(expression) => {
-                    self.generate_expression(expression);
-                    self.code.push_str("\tret\n");
+                    self.generate_expression(expression)?;
+                    self.function_contains_return.insert(function.name.to_string(), true);
+                    //self.code.push_str("\tret\n");
+                },
+                Statement::Declare(name, expression) => {
+                    if self.variables.contains_key(name) {
+                        Err(CodeGeneratorError::new(format!("Variable {} already declared", name)))?;
+                    }
+                    if let Some(expression) = expression {
+                        self.generate_expression(expression)?;
+                    }
+                    self.code.push_str("\tpushl\t%eax\n");
+                    self.stack_offset -= 4;
+                    self.variables.insert(name.to_string(), self.stack_offset);
                 }
+                Statement::Expression(expression) => {
+                    self.generate_expression(expression)?;
+                }
+                //_ => {}
             }
         }
+        if !*self.function_contains_return.get(&function.name).unwrap_or(&false) {
+            self.code.push_str("\tmovl\t$0, %eax\n");
+        }
+        self.generate_fn_epilogue();
+        Ok(())
     }
 
-    fn generate_expression(&mut self, expression: &Expression) {
+    fn generate_expression(&mut self, expression: &Expression) -> Result<(), CodeGeneratorError> {
         match expression {
             Expression::Integer(integer) => {
                 self.code.push_str(format!("\tmovl\t${}, %eax\n", integer).as_str());
             }
             Expression::UnaryOperator(op, expression) => {
-                self.generate_expression(expression);
+                self.generate_expression(expression)?;
                 match op {
                     TokenType::Negation => {
                         self.code.push_str("\tneg\t%eax\n");
@@ -77,15 +135,15 @@ impl CodeGenerator {
             Expression::BinaryOperator(op, left, right) => {
                 match op {
                     TokenType::Negation | TokenType::Division => {
-                        self.generate_expression(right);
+                        self.generate_expression(right)?;
                         self.push_register(Register::EAX);
-                        self.generate_expression(left);
+                        self.generate_expression(left)?;
                         self.pop_register(Register::ECX);
                     }
                     TokenType::LogicalOr | TokenType::LogicalAnd => {
                         let jump = self.generate_label();
                         let end = self.generate_label();
-                        self.generate_expression(left);
+                        self.generate_expression(left)?;
                         self.code.push_str("\tcmpl\t$0, %eax\n");
                         match op {
                             TokenType::LogicalAnd => {
@@ -100,7 +158,7 @@ impl CodeGenerator {
                             _ => {}
                         }
                         self.code.push_str(format!("{}:\n", jump).as_str());
-                        self.generate_expression(right);
+                        self.generate_expression(right)?;
 
                         self.code.push_str("\tcmpl\t$0, %eax\n");
                         self.code.push_str("\tmovl\t$0, %eax\n");
@@ -109,9 +167,9 @@ impl CodeGenerator {
                         self.code.push_str(format!("{}:\n", end).as_str());
                     }
                     _ => {
-                        self.generate_expression(left);
+                        self.generate_expression(left)?;
                         self.push_register(Register::EAX);
-                        self.generate_expression(right);
+                        self.generate_expression(right)?;
                         self.pop_register(Register::ECX);
                     }
                 }
@@ -145,9 +203,28 @@ impl CodeGenerator {
                     }
                     _ => {}
                 }
-
+            }
+            Expression::Assign(name, expression) => {
+                self.generate_expression(expression)?;
+                let variable_offset = match self.variables.get(name) {
+                    Some(offset) => *offset,
+                    None => {
+                        return Err(CodeGeneratorError::new(format!("Variable not found: {}", name)));
+                    }
+                };
+                self.code.push_str(format!("\tmovl\t%eax, {}(%ebp)\n", variable_offset).as_str());
+            }
+            Expression::Variable(name) => {
+                let variable_offset = match self.variables.get(name) {
+                    Some(offset) => *offset,
+                    None => {
+                        return Err(CodeGeneratorError::new(format!("Variable not found, not declared: {}", name)));
+                    }
+                };
+                self.code.push_str(format!("\tmovl\t{}(%ebp), %eax\n", variable_offset).as_str());
             }
         }
+        Ok(())
     }
 
     pub fn get_code(&self) -> &str {
@@ -170,6 +247,17 @@ impl CodeGenerator {
         let label = format!("_lab{}", self.label_num);
         self.label_num += 1;
         label
+    }
+
+    fn generate_fn_prologue(&mut self) {
+        self.code.push_str("\tpush %ebp\n");
+        self.code.push_str("\tmovl %esp, %ebp\n");
+    }
+
+    fn generate_fn_epilogue(&mut self) {
+        self.code.push_str("\tmovl %ebp, %esp\n");
+        self.code.push_str("\tpop %ebp\n");
+        self.code.push_str("\tret\n");
     }
     
 }

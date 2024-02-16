@@ -45,10 +45,14 @@ pub struct Function {
 #[derive(Debug)]
 pub enum Statement {
     Return(Expression),
+    Declare(String, Option<Expression>),
+    Expression(Expression),
 }
 
 #[derive(Debug)]
 pub enum Expression {
+    Assign(String, Box<Expression>),
+    Variable(String),
     Integer(i32),
     UnaryOperator(TokenType, Box<Expression>),
     BinaryOperator(TokenType, Box<Expression>, Box<Expression>),
@@ -145,22 +149,58 @@ impl<T: TokenStream> Parser<T> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParsingError> {
-        self.try_parse(TokenType::Keyword(KeywordType::Return))?;
-        let expression = self.parse_expression()?;
-        self.try_parse(TokenType::Semicolon)?;
-        return Ok(Statement::Return(expression));
+        let token_type = match self.token_stream.peek_token() {
+            Some(Ok(token)) => token.get_type(),
+            _ => return Err(ParsingError::new("Expected statement".to_string())),
+        };
+        match token_type {
+            TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)) => {
+                self.try_parse(TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)))?;
+                let name = self.try_parse(TokenType::Identifier("".to_string()))?;
+                let optional_assignment = self.parse_optional_assignment()?;
+                self.try_parse(TokenType::Semicolon)?;
+                return Ok(Statement::Declare(name.get_literal().to_string(), optional_assignment));
+            },
+            TokenType::Keyword(KeywordType::Return) => {
+                self.try_parse(TokenType::Keyword(KeywordType::Return))?;
+                let expression = self.parse_expression()?;
+                self.try_parse(TokenType::Semicolon)?;
+                return Ok(Statement::Return(expression));
+            },
+            _ => {
+                let expression = self.parse_expression()?;
+                self.try_parse(TokenType::Semicolon)?;
+                return Ok(Statement::Expression(expression));
+            }
+        }
+
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParsingError> {
-        let parser_function = |parser: &mut Self| parser.parse_logical_and();
+        let token = self.token_stream.next_token().ok_or_else(|| ParsingError::new("Expected expression".to_string()))??;
+        if let Some(token_type) = self.peek_type() {
+            match token_type {
+                TokenType::Assignment => {
+                    self.try_parse(TokenType::Assignment)?;
+                    let expression = self.parse_expression()?;
+                    //self.try_parse(TokenType::Semicolon)?;
+                    return Ok(Expression::Assign(token.get_literal().to_string(), Box::new(expression)));
+                }
+                _ => self.token_stream.putback_token(token)?,
+            }
+        }
+        self.parse_logical_or()
+    }
+
+    fn parse_logical_or(&mut self) -> Result<Expression, ParsingError> {
+        let parser_func = |parser: &mut Self| parser.parse_logical_and();
         let separator_func = |token_type: TokenType| -> bool {
             match token_type {
                 TokenType::LogicalOr => true,
                 _ => false,
             }
         };
-
-        self.parse_none_or_more(parser_function, separator_func)
+        self.parse_none_or_more(parser_func, separator_func)
     }
 
     fn parse_logical_and(&mut self) -> Result<Expression, ParsingError> {
@@ -236,6 +276,7 @@ impl<T: TokenStream> Parser<T> {
                         Ok(Expression::UnaryOperator(operator, Box::new(factor)))
                     }
                     TokenType::IntegerLiteral(i) => Ok(Expression::Integer(i)),
+                    TokenType::Identifier(name) => Ok(Expression::Variable(name)),
                     _ => {
                         Err(ParsingError::new(format!("Expected Factor, found {:?}", token.get_type())))
                     }
@@ -295,5 +336,23 @@ impl<T: TokenStream> Parser<T> {
             }
         }
         Ok(result)
+    }
+
+    fn peek_type(&self) -> Option<TokenType> {
+        match self.token_stream.peek_token() {
+            Some(Ok(token)) => Some(token.get_type()),
+            _ => None,
+        }
+    }
+
+    fn parse_optional_assignment(&mut self) -> Result<Option<Expression>, ParsingError> {
+        match self.peek_type() {
+            Some(TokenType::Assignment) => {
+                self.token_stream.next_token();
+                let expression= self.parse_expression()?;
+                Ok(Some(expression))
+            },
+            _ => Ok(None),
+        }
     }
 }
