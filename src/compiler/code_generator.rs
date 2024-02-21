@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{lexer::TokenType, parser::{Expression, Function, Program, Statement}};
+use super::{lexer::TokenType, parser::{BlockItem, Expression, Function, Program, Statement}};
 
 #[derive(Debug)]
 pub struct CodeGeneratorError {
@@ -79,14 +79,9 @@ impl CodeGenerator {
             .insert(function.name.to_string(), false);
 
         self.generate_fn_prologue();
-        for statement in function.statements.iter() {
-            match statement {
-                Statement::Return(expression) => {
-                    self.generate_expression(expression)?;
-                    self.function_contains_return.insert(function.name.to_string(), true);
-                    //self.code.push_str("\tret\n");
-                },
-                Statement::Declare(name, expression) => {
+        for item in function.block.iter() {
+            match item {
+                BlockItem::Declaration(name, expression) => {
                     if self.variables.contains_key(name) {
                         Err(CodeGeneratorError::new(format!("Variable {} already declared", name)))?;
                     }
@@ -96,17 +91,49 @@ impl CodeGenerator {
                     self.code.push_str("\tpushl\t%eax\n");
                     self.stack_offset -= 4;
                     self.variables.insert(name.to_string(), self.stack_offset);
+                },
+                BlockItem::Statement(statement) => {
+                    self.generate_statement(statement)?;
                 }
-                Statement::Expression(expression) => {
-                    self.generate_expression(expression)?;
-                }
-                //_ => {}
             }
         }
         if !*self.function_contains_return.get(&function.name).unwrap_or(&false) {
             self.code.push_str("\tmovl\t$0, %eax\n");
         }
         self.generate_fn_epilogue();
+        Ok(())
+    }
+
+    fn generate_statement(&mut self, statement: &Statement) -> Result<(), CodeGeneratorError> {
+        match statement {
+            Statement::Return(expression) => {
+                self.generate_expression(expression)?;
+                self.generate_fn_epilogue();
+                self.code.push_str("\tret\n");
+            },
+            Statement::Expression(expression) => {
+                self.generate_expression(expression)?;
+            },
+            Statement::If(expression, block, else_block) => {
+                let end = self.generate_label();
+                self.generate_expression(expression)?;
+                self.code.push_str("\tcmpl\t$0, %eax\n");
+                
+                if let Some(else_block) = else_block {
+                    let else_jump = self.generate_label();
+                    self.code.push_str(format!("\tje\t{}\n", else_jump).as_str());
+                    self.generate_statement(block)?;
+                    self.code.push_str(format!("\tjmp\t{}\n", end).as_str());
+                    self.code.push_str(format!("{}:\n", else_jump).as_str());
+                    self.generate_statement(else_block)?;
+                } else {
+                    self.code.push_str(format!("\tje\t{}\n", end).as_str());
+                    self.generate_statement(block)?;
+                };
+                self.code.push_str(format!("{}:\n", end).as_str());
+            }
+
+        }
         Ok(())
     }
 
@@ -222,6 +249,21 @@ impl CodeGenerator {
                     }
                 };
                 self.code.push_str(format!("\tmovl\t{}(%ebp), %eax\n", variable_offset).as_str());
+            },
+            Expression::Conditional(condition, true_expression, false_expression) => {
+                let else_jump = self.generate_label();
+                let end = self.generate_label();
+
+                self.generate_expression(condition)?;
+                self.code.push_str("\tcmpl\t$0, %eax\n");
+                self.code.push_str(format!("\tje\t{}\n", else_jump).as_str());
+                
+                self.generate_expression(true_expression)?;
+                self.code.push_str(format!("\tjmp\t{}\n", end).as_str());
+                self.code.push_str(format!("{}:\n", else_jump).as_str());
+                
+                self.generate_expression(false_expression)?;
+                self.code.push_str(format!("{}:\n", end).as_str());
             }
         }
         Ok(())

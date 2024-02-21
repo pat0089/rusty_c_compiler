@@ -10,6 +10,8 @@ pub enum IdentifierType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KeywordType {
     Return,
+    If,
+    Else,
     IdentifierType(IdentifierType),
 }
 
@@ -49,6 +51,9 @@ pub enum TokenType {
     LogicalOr,
 
     Assignment,
+
+    Colon,
+    QuestionMark,
 }
 
 impl TokenType {
@@ -76,8 +81,12 @@ impl TokenType {
             "*" => TokenType::Multiplication,
             "/" => TokenType::Division,
             "=" => TokenType::Assignment,
+            ":" => TokenType::Colon,
+            "?" => TokenType::QuestionMark,
             "int" => TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)),
             "return" => TokenType::Keyword(KeywordType::Return),
+            "if" => TokenType::Keyword(KeywordType::If),
+            "else" => TokenType::Keyword(KeywordType::Else),
             _ => TokenType::Illegal(LexerError::new(format!("Invalid token: {}", to_string))),
         }
     }
@@ -218,8 +227,8 @@ impl Lexer {
         let mut current_token = String::new();
         let valid_identifier_regex = Regex::new(r"[_a-zA-Z][_a-zA-Z0-9]{0,30}").unwrap();
         let valid_number_regex = Regex::new(r"^[0-9]+$").unwrap();
-        let keywords = HashSet::from(["int", "return"]);
-        let symbols = HashSet::from([";", "(", ")", "{", "}", "[", "]", "<", ">", "=", "+", "-", "*", "/", "%", "!", "~", "&", "|"]);
+        let keywords = HashSet::from(["int", "return", "if", "else", "while", "for", "do", "break", "continue", "switch", "case", "default"]);
+        let symbols = HashSet::from([";", "(", ")", "{", "}", "[", "]", "<", ">", "=", "+", "-", "*", "/", "%", "!", "~", "&", "|", "?", ":"]);
         let potential_double_symbol_chars = HashSet::from(["=", "<", ">", "!", "&", "|"]);
         let final_line_num = input.lines().count();
         let mut last_char_num = 0;
@@ -228,6 +237,9 @@ impl Lexer {
             match keyword.as_str() {
                 "int" => TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)),
                 "return" => TokenType::Keyword(KeywordType::Return),
+                "if" => TokenType::Keyword(KeywordType::If),
+                "else" => TokenType::Keyword(KeywordType::Else),
+                //TODO: add other keywords
                 _ => TokenType::Illegal(LexerError::new(format!("Invalid keyword: {}", keyword))),
             }
         };

@@ -39,14 +39,20 @@ pub struct Program {
 #[derive(Debug)]
 pub struct Function {
     pub name: String,
-    pub statements: Vec<Statement>,
+    pub block: Vec<BlockItem>,
+}
+
+#[derive(Debug)]
+pub enum BlockItem {
+    Statement(Statement),
+    Declaration(String, Option<Expression>),
 }
 
 #[derive(Debug)]
 pub enum Statement {
     Return(Expression),
-    Declare(String, Option<Expression>),
     Expression(Expression),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
 }
 
 #[derive(Debug)]
@@ -56,6 +62,7 @@ pub enum Expression {
     Integer(i32),
     UnaryOperator(TokenType, Box<Expression>),
     BinaryOperator(TokenType, Box<Expression>, Box<Expression>),
+    Conditional(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
 #[derive(Debug)]
@@ -120,7 +127,7 @@ impl<T: TokenStream> Parser<T> {
         self.try_parse(TokenType::RParen)?;
         self.try_parse(TokenType::LBrace)?;
 
-        let mut statements = Vec::new();
+        let mut block = Vec::new();
         loop {
 
             if let Some(Ok(token)) = self.token_stream.peek_token() {
@@ -129,10 +136,10 @@ impl<T: TokenStream> Parser<T> {
                 }
             }
 
-            let statement = self.parse_statement();
-            match statement {
-                Ok(statement) => {
-                    statements.push(statement);
+            let block_item = self.parse_block_item();
+            match block_item {
+                Ok(block_item) => {
+                    block.push(block_item);
                 }
                 Err(err) => {
                     return Err(err);
@@ -144,8 +151,34 @@ impl<T: TokenStream> Parser<T> {
 
         Ok(Function {
             name: name.get_literal().to_string(),
-            statements
+            block,
         })        
+    }
+
+    fn parse_block_item(&mut self) -> Result<BlockItem, ParsingError> {
+        let token_type = match self.token_stream.peek_token() {
+            Some(Ok(token)) => token.get_type(),
+            _ => return Err(ParsingError::new("Expected block item".to_string())),
+        };
+
+        match token_type {
+            TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)) => {
+                let declaration = self.parse_declaration()?;
+                Ok(declaration)
+            }
+            _ => {
+                let statement = self.parse_statement()?;
+                Ok(BlockItem::Statement(statement))
+            }
+        }
+    }
+
+    fn parse_declaration(&mut self) -> Result<BlockItem, ParsingError> {
+        self.try_parse(TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)))?;
+        let name = self.try_parse(TokenType::Identifier("".to_string()))?;
+        let optional_assignment = self.parse_optional_assignment()?;
+        self.try_parse(TokenType::Semicolon)?;
+        Ok(BlockItem::Declaration(name.get_literal().to_string(), optional_assignment))
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParsingError> {
@@ -154,19 +187,26 @@ impl<T: TokenStream> Parser<T> {
             _ => return Err(ParsingError::new("Expected statement".to_string())),
         };
         match token_type {
-            TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)) => {
-                self.try_parse(TokenType::Keyword(KeywordType::IdentifierType(IdentifierType::Int)))?;
-                let name = self.try_parse(TokenType::Identifier("".to_string()))?;
-                let optional_assignment = self.parse_optional_assignment()?;
-                self.try_parse(TokenType::Semicolon)?;
-                return Ok(Statement::Declare(name.get_literal().to_string(), optional_assignment));
-            },
             TokenType::Keyword(KeywordType::Return) => {
                 self.try_parse(TokenType::Keyword(KeywordType::Return))?;
                 let expression = self.parse_expression()?;
                 self.try_parse(TokenType::Semicolon)?;
                 return Ok(Statement::Return(expression));
             },
+            TokenType::Keyword(KeywordType::If) => {
+                self.try_parse(TokenType::Keyword(KeywordType::If))?;
+                self.try_parse(TokenType::LParen)?;
+                let expression = self.parse_expression()?;
+                self.try_parse(TokenType::RParen)?;
+                let statement = self.parse_statement()?;
+                let next_token_type = self.peek_type();
+                if let Some(TokenType::Keyword(KeywordType::Else)) = next_token_type {
+                    self.try_parse(TokenType::Keyword(KeywordType::Else))?;
+                    let else_statement = self.parse_statement()?;
+                    return Ok(Statement::If(expression, Box::new(statement), Some(Box::new(else_statement))));
+                }
+                return Ok(Statement::If(expression, Box::new(statement), None));
+            }
             _ => {
                 let expression = self.parse_expression()?;
                 self.try_parse(TokenType::Semicolon)?;
@@ -189,7 +229,20 @@ impl<T: TokenStream> Parser<T> {
                 _ => self.token_stream.putback_token(token)?,
             }
         }
-        self.parse_logical_or()
+        self.parse_conditional_expression()
+    }
+
+    fn parse_conditional_expression(&mut self) -> Result<Expression, ParsingError> {
+        let expression = self.parse_logical_or()?;
+        let next_token_type = self.peek_type();
+        if let Some(TokenType::QuestionMark) = next_token_type {
+            self.try_parse(TokenType::QuestionMark)?;
+            let true_expression = self.parse_expression()?;
+            self.try_parse(TokenType::Colon)?;
+            let false_expression = self.parse_conditional_expression()?;
+            return Ok(Expression::Conditional(Box::new(expression), Box::new(true_expression), Box::new(false_expression)));
+        }
+        Ok(expression)
     }
 
     fn parse_logical_or(&mut self) -> Result<Expression, ParsingError> {

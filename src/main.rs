@@ -20,12 +20,7 @@ fn main() -> Result<(), CompilerError> {
     let mut lexer = Lexer::new(&file_contents);
     lexer.validate()?;
     let mut parser = Parser::new(lexer);
-    match parser.parse() {
-        Err(e) => {
-            return Err(e.into());
-        },
-        _ => {}
-    }
+    parser.parse()?;
     let mut code_generator = CodeGenerator::new();
     code_generator.generate(parser.get_ast())?;
     let assembly_file = format!("{}{}.s", file_path, file_name);
