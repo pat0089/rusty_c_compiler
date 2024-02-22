@@ -53,6 +53,7 @@ pub enum Statement {
     Return(Expression),
     Expression(Expression),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
+    Block(Vec<BlockItem>),
 }
 
 #[derive(Debug)]
@@ -125,29 +126,8 @@ impl<T: TokenStream> Parser<T> {
         let name = self.try_parse(TokenType::Identifier("".to_string()))?;
         self.try_parse(TokenType::LParen)?;
         self.try_parse(TokenType::RParen)?;
-        self.try_parse(TokenType::LBrace)?;
-
-        let mut block = Vec::new();
-        loop {
-
-            if let Some(Ok(token)) = self.token_stream.peek_token() {
-                if token.get_type() == TokenType::RBrace {
-                    break;
-                }
-            }
-
-            let block_item = self.parse_block_item();
-            match block_item {
-                Ok(block_item) => {
-                    block.push(block_item);
-                }
-                Err(err) => {
-                    return Err(err);
-                }
-            }
-        }
-
-        self.try_parse(TokenType::RBrace)?;
+        
+        let block = self.parse_block()?;
 
         Ok(Function {
             name: name.get_literal().to_string(),
@@ -171,6 +151,33 @@ impl<T: TokenStream> Parser<T> {
                 Ok(BlockItem::Statement(statement))
             }
         }
+    }
+
+    fn parse_block(&mut self) -> Result<Vec<BlockItem>, ParsingError> {
+        self.try_parse(TokenType::LBrace)?;
+
+        let mut block = Vec::new();
+        loop {
+
+            if let Some(Ok(token)) = self.token_stream.peek_token() {
+                if token.get_type() == TokenType::RBrace {
+                    break;
+                }
+            }
+
+            let block_item = self.parse_block_item();
+            match block_item {
+                Ok(block_item) => {
+                    block.push(block_item);
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            }
+        }
+
+        self.try_parse(TokenType::RBrace)?;
+        Ok(block)
     }
 
     fn parse_declaration(&mut self) -> Result<BlockItem, ParsingError> {
@@ -206,7 +213,11 @@ impl<T: TokenStream> Parser<T> {
                     return Ok(Statement::If(expression, Box::new(statement), Some(Box::new(else_statement))));
                 }
                 return Ok(Statement::If(expression, Box::new(statement), None));
-            }
+            },
+            TokenType::LBrace => {
+                let block = self.parse_block()?;
+                return Ok(Statement::Block(block));
+            },
             _ => {
                 let expression = self.parse_expression()?;
                 self.try_parse(TokenType::Semicolon)?;

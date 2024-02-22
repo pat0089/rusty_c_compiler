@@ -1,6 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use super::{lexer::TokenType, parser::{BlockItem, Expression, Function, Program, Statement}};
+use super::{
+    lexer::TokenType,
+    parser::{BlockItem, Expression, Function, Program, Statement},
+};
 
 #[derive(Debug)]
 pub struct CodeGeneratorError {
@@ -29,9 +32,7 @@ impl std::fmt::Display for CodeGeneratorError {
 pub struct CodeGenerator {
     code: String,
     label_num: i32,
-    variables: HashMap<String, i32>,
     function_contains_return: HashMap<String, bool>,
-    stack_offset: i32,
 }
 
 #[derive(Debug)]
@@ -58,9 +59,7 @@ impl CodeGenerator {
         CodeGenerator {
             code: String::new(),
             label_num: 0,
-            variables: HashMap::new(),
             function_contains_return: HashMap::new(),
-            stack_offset: 0,
         }
     }
 
@@ -73,77 +72,122 @@ impl CodeGenerator {
     }
 
     fn generate_function(&mut self, function: &Function) -> Result<(), CodeGeneratorError> {
-        self.code.push_str(format!("\t.globl\t{}\n", function.name).as_str());
+        let mut var_map: HashMap<String, i32> = HashMap::new();
+        let mut stack_offset = -4;
+
+        self.code
+            .push_str(format!("\t.globl\t{}\n", function.name).as_str());
         self.code.push_str(format!("{}:\n", function.name).as_str());
         self.function_contains_return
             .insert(function.name.to_string(), false);
 
         self.generate_fn_prologue();
-        for item in function.block.iter() {
-            match item {
-                BlockItem::Declaration(name, expression) => {
-                    if self.variables.contains_key(name) {
-                        Err(CodeGeneratorError::new(format!("Variable {} already declared", name)))?;
-                    }
-                    if let Some(expression) = expression {
-                        self.generate_expression(expression)?;
-                    }
-                    self.code.push_str("\tpushl\t%eax\n");
-                    self.stack_offset -= 4;
-                    self.variables.insert(name.to_string(), self.stack_offset);
-                },
-                BlockItem::Statement(statement) => {
-                    self.generate_statement(statement)?;
-                }
-            }
-        }
-        if !*self.function_contains_return.get(&function.name).unwrap_or(&false) {
+        
+        self.generate_block(&function.block, &mut var_map, &mut stack_offset)?;
+
+        if !*self
+            .function_contains_return
+            .get(&function.name)
+            .unwrap_or(&false)
+        {
             self.code.push_str("\tmovl\t$0, %eax\n");
         }
         self.generate_fn_epilogue();
         Ok(())
     }
 
-    fn generate_statement(&mut self, statement: &Statement) -> Result<(), CodeGeneratorError> {
+    fn generate_statement(
+        &mut self,
+        statement: &Statement,
+        var_map: &mut HashMap<String, i32>,
+        stack_offset: &mut i32,
+    ) -> Result<(), CodeGeneratorError> {
         match statement {
             Statement::Return(expression) => {
-                self.generate_expression(expression)?;
+                self.generate_expression(expression, var_map, stack_offset)?;
                 self.generate_fn_epilogue();
                 self.code.push_str("\tret\n");
-            },
+            }
             Statement::Expression(expression) => {
-                self.generate_expression(expression)?;
-            },
+                self.generate_expression(expression, var_map, stack_offset)?;
+            }
             Statement::If(expression, block, else_block) => {
                 let end = self.generate_label();
-                self.generate_expression(expression)?;
+                self.generate_expression(expression, var_map, stack_offset)?;
                 self.code.push_str("\tcmpl\t$0, %eax\n");
-                
+
                 if let Some(else_block) = else_block {
                     let else_jump = self.generate_label();
-                    self.code.push_str(format!("\tje\t{}\n", else_jump).as_str());
-                    self.generate_statement(block)?;
+                    self.code
+                        .push_str(format!("\tje\t{}\n", else_jump).as_str());
+                    self.generate_statement(block, var_map, stack_offset)?;
                     self.code.push_str(format!("\tjmp\t{}\n", end).as_str());
                     self.code.push_str(format!("{}:\n", else_jump).as_str());
-                    self.generate_statement(else_block)?;
+                    self.generate_statement(else_block, var_map, stack_offset)?;
                 } else {
                     self.code.push_str(format!("\tje\t{}\n", end).as_str());
-                    self.generate_statement(block)?;
+                    self.generate_statement(block, var_map, stack_offset)?;
                 };
                 self.code.push_str(format!("{}:\n", end).as_str());
             }
-
+            Statement::Block(block) => {
+                self.generate_block(block, var_map, stack_offset)?;
+            }
         }
         Ok(())
     }
 
-    fn generate_expression(&mut self, expression: &Expression) -> Result<(), CodeGeneratorError> {
+    fn generate_block(
+        &mut self,
+        block: &Vec<BlockItem>,
+        var_map: &mut HashMap<String, i32>,
+        stack_offset: &mut i32,
+    ) -> Result<(), CodeGeneratorError> {
+        let context = var_map.clone();
+        let mut current_scope = HashSet::new();
+        let current_offset = *stack_offset;
+        for item in block {
+            match item {
+                BlockItem::Declaration(name, expression) => {
+                    if current_scope.contains(name) {
+                        Err(CodeGeneratorError::new(format!(
+                            "Variable {} already declared",
+                            name
+                        )))?;
+                    }
+                    if let Some(expression) = expression {
+                        self.generate_expression(expression, var_map, stack_offset)?;
+                    }
+                    self.code.push_str("\tpushl\t%eax\n");
+                    var_map.insert(name.to_string(), *stack_offset);
+                    current_scope.insert(name.to_string());
+                    *stack_offset -= 4;
+                }
+                BlockItem::Statement(statement) => {
+                    self.generate_statement(statement, var_map, stack_offset)?;
+                }
+            }
+        }
+        *var_map = context;
+        *stack_offset = current_offset;
+        self.code
+            .push_str(format!("\taddl\t${}, %esp\n", current_scope.len() * 4).as_str());
+        Ok(())
+    }
+
+    fn generate_expression(
+        &mut self,
+        expression: &Expression,
+        var_map: &HashMap<String, i32>,
+        stack_offset: &mut i32,
+    ) -> Result<(), CodeGeneratorError> {
         match expression {
             Expression::Integer(integer) => {
-                self.code.push_str(format!("\tmovl\t${}, %eax\n", integer).as_str());
+                self.code
+                    .push_str(format!("\tmovl\t${}, %eax\n", integer).as_str());
             }
             Expression::UnaryOperator(op, expression) => {
-                self.generate_expression(expression)?;
+                self.generate_expression(expression, var_map, stack_offset)?;
                 match op {
                     TokenType::Negation => {
                         self.code.push_str("\tneg\t%eax\n");
@@ -162,15 +206,15 @@ impl CodeGenerator {
             Expression::BinaryOperator(op, left, right) => {
                 match op {
                     TokenType::Negation | TokenType::Division => {
-                        self.generate_expression(right)?;
+                        self.generate_expression(right, var_map, stack_offset)?;
                         self.push_register(Register::EAX);
-                        self.generate_expression(left)?;
+                        self.generate_expression(left, var_map, stack_offset)?;
                         self.pop_register(Register::ECX);
                     }
                     TokenType::LogicalOr | TokenType::LogicalAnd => {
                         let jump = self.generate_label();
                         let end = self.generate_label();
-                        self.generate_expression(left)?;
+                        self.generate_expression(left, var_map, stack_offset)?;
                         self.code.push_str("\tcmpl\t$0, %eax\n");
                         match op {
                             TokenType::LogicalAnd => {
@@ -185,7 +229,7 @@ impl CodeGenerator {
                             _ => {}
                         }
                         self.code.push_str(format!("{}:\n", jump).as_str());
-                        self.generate_expression(right)?;
+                        self.generate_expression(right, var_map, stack_offset)?;
 
                         self.code.push_str("\tcmpl\t$0, %eax\n");
                         self.code.push_str("\tmovl\t$0, %eax\n");
@@ -194,28 +238,32 @@ impl CodeGenerator {
                         self.code.push_str(format!("{}:\n", end).as_str());
                     }
                     _ => {
-                        self.generate_expression(left)?;
+                        self.generate_expression(left, var_map, stack_offset)?;
                         self.push_register(Register::EAX);
-                        self.generate_expression(right)?;
+                        self.generate_expression(right, var_map, stack_offset)?;
                         self.pop_register(Register::ECX);
                     }
                 }
                 match op {
                     TokenType::Addition => {
                         self.code.push_str("\taddl\t%ecx, %eax\n");
-                    },
+                    }
                     TokenType::Negation => {
                         self.code.push_str("\tsubl\t%ecx, %eax\n");
-                    },
+                    }
                     TokenType::Multiplication => {
                         self.code.push_str("\timul\t%ecx, %eax\n");
-                    },
+                    }
                     TokenType::Division => {
                         self.code.push_str("\tcdq\n");
                         self.code.push_str("\tidivl\t%ecx\n");
-                    },
-                    TokenType::Equals | TokenType::NotEquals | TokenType::GreaterThan | TokenType::LessThan
-                    | TokenType::GreaterThanOrEquals | TokenType::LessThanOrEquals => {
+                    }
+                    TokenType::Equals
+                    | TokenType::NotEquals
+                    | TokenType::GreaterThan
+                    | TokenType::LessThan
+                    | TokenType::GreaterThanOrEquals
+                    | TokenType::LessThanOrEquals => {
                         self.code.push_str("\tcmpl\t%eax, %ecx\n");
                         self.code.push_str("\tmovl\t$0, %eax\n");
                         match op {
@@ -232,37 +280,46 @@ impl CodeGenerator {
                 }
             }
             Expression::Assign(name, expression) => {
-                self.generate_expression(expression)?;
-                let variable_offset = match self.variables.get(name) {
+                self.generate_expression(expression, var_map, stack_offset)?;
+                let variable_offset = match var_map.get(name) {
                     Some(offset) => *offset,
                     None => {
-                        return Err(CodeGeneratorError::new(format!("Variable not found: {}", name)));
+                        return Err(CodeGeneratorError::new(format!(
+                            "Variable not found: {}",
+                            name
+                        )));
                     }
                 };
-                self.code.push_str(format!("\tmovl\t%eax, {}(%ebp)\n", variable_offset).as_str());
+                self.code
+                    .push_str(format!("\tmovl\t%eax, {}(%ebp)\n", variable_offset).as_str());
             }
             Expression::Variable(name) => {
-                let variable_offset = match self.variables.get(name) {
+                let variable_offset = match var_map.get(name) {
                     Some(offset) => *offset,
                     None => {
-                        return Err(CodeGeneratorError::new(format!("Variable not found, not declared: {}", name)));
+                        return Err(CodeGeneratorError::new(format!(
+                            "Variable not found, not declared: {}",
+                            name
+                        )));
                     }
                 };
-                self.code.push_str(format!("\tmovl\t{}(%ebp), %eax\n", variable_offset).as_str());
-            },
+                self.code
+                    .push_str(format!("\tmovl\t{}(%ebp), %eax\n", variable_offset).as_str());
+            }
             Expression::Conditional(condition, true_expression, false_expression) => {
                 let else_jump = self.generate_label();
                 let end = self.generate_label();
 
-                self.generate_expression(condition)?;
+                self.generate_expression(condition, var_map, stack_offset)?;
                 self.code.push_str("\tcmpl\t$0, %eax\n");
-                self.code.push_str(format!("\tje\t{}\n", else_jump).as_str());
-                
-                self.generate_expression(true_expression)?;
+                self.code
+                    .push_str(format!("\tje\t{}\n", else_jump).as_str());
+
+                self.generate_expression(true_expression, var_map, stack_offset)?;
                 self.code.push_str(format!("\tjmp\t{}\n", end).as_str());
                 self.code.push_str(format!("{}:\n", else_jump).as_str());
-                
-                self.generate_expression(false_expression)?;
+
+                self.generate_expression(false_expression, var_map, stack_offset)?;
                 self.code.push_str(format!("{}:\n", end).as_str());
             }
         }
@@ -278,11 +335,13 @@ impl CodeGenerator {
     }
 
     fn push_register(&mut self, register: Register) {
-        self.code.push_str(format!("\tpush\t{}\n", register).as_str());
+        self.code
+            .push_str(format!("\tpush\t{}\n", register).as_str());
     }
 
     fn pop_register(&mut self, register: Register) {
-        self.code.push_str(format!("\tpop\t{}\n", register).as_str());
+        self.code
+            .push_str(format!("\tpop\t{}\n", register).as_str());
     }
 
     fn generate_label(&mut self) -> String {
@@ -301,6 +360,4 @@ impl CodeGenerator {
         self.code.push_str("\tpop %ebp\n");
         self.code.push_str("\tret\n");
     }
-    
 }
-
